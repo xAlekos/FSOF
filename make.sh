@@ -1,0 +1,1 @@
+gcc -Wall fsof.c `pkg-config fuse3 --cflags --libs` -o fsof
