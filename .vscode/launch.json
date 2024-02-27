@@ -8,7 +8,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/fsof",
+            "program": "/home/bantino/Scrivania/Progetti/FSOF/fsof",
             "args": ["-f","mnt"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

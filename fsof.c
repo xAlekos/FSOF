@@ -1,24 +1,3 @@
-/*
-  FUSE: Filesystem in Userspace
-  Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
-
-  This program can be distributed under the terms of the GNU GPLv2.
-  See the file COPYING.
-*/
-
-/** @file
- *
- * minimal example filesystem using high-level API
- *
- * Compile with:
- *
- *     gcc -Wall hello.c `pkg-config fuse3 --cflags --libs` -o hello
- *
- * ## Source code ##
- * \include hello.c
- */
-
-
 #define FUSE_USE_VERSION 31
 
 #include <fuse.h>
@@ -30,33 +9,181 @@
 #include <assert.h>
 #include <stdlib.h>
 
-struct file {
-    char name[50];
-    char content[50];
-};
 
-struct file nodi_file[50];
+/*
+File che compone il file system, tutti i file sono di questo tipo diffenziati dal campo mode.
 
-void InitFS(struct file* nodi_file){
+@name Il nome del file
+@content Il contenuto del file ( Ignorato nel caso in cui questo sia una cartella)
+@mode Il tipo di file e flag di permesso.
+@dir_content Ignorato se mode è diverso da S_IFDIR, riferimento a struttura contenente i file presenti nella cartella.
+*/
+typedef struct filenode {
+    
+	char name[50];
+
+	uint8_t check;
+
+    char* content;
+
+	__mode_t mode;
+
+	struct filenode* dir_content; 
+} filenode_t;
+
+/*
+Salva in buffer i token che compongono il path
+Ritorna il numero di token
+@path percorso del file ottenuto dall'interfaccia FUSE
+@buffer Buffer in cui salvare i token che compongono il path utilizzati per la localizzazione del file nel file system.
+*/
+uint16_t TokenizePath(const char* path, char** tokens_buffer){
+    
+    char path_buffer[1000];
+    strcpy(path_buffer,path);
+    int n = 0;
+
+    char* saveptr; //Usato per garantire la rientranza di strtok_r
+    char* path_token = strtok_r(path_buffer,"/",&saveptr);
+    
+    while(path_token != NULL){
+        
+        strcpy(tokens_buffer[n],path_token);
+       // tokens_buffer[n] = path_token;
+        path_token = strtok_r(NULL,"/",&saveptr);
+        n++;
+    }
+
+    return n;
+}
+
+
+/*
+Funzione hash djb2 
+*/
+uint16_t HashFileName(char* name){
+
+    uint16_t hash = 5381;
+        int c;
+
+        while(c = *name++)
+            hash = ((hash << 5) + hash) + c; 
+
+        return hash;
+
+}
+
+filenode_t files[50]; //FILES CONTENUTI IN /
+
+filenode_t files2[50]; //FILES CONTENUTI IN /DIR
+
+
+
+
+/*
+Tramite l'hash di ogni token per directory trova il file corrispondente.
+*/
+filenode_t* FileFromPath(const char* path){
+	
+    char* tokens[500];
+
+    for(int i = 0 ; i<500; i++)
+        tokens[i] = malloc(500);
+
+    uint16_t n = TokenizePath(path,tokens);
+    uint8_t i = 0;
+    filenode_t* root_dir = files;
+    uint8_t address = HashFileName(tokens[i++]) % 50;
+    filenode_t* last_file = &root_dir[address];
+
+    if(strcmp(last_file->name,tokens[0]) != 0) //TODO AGGIUNGERE CHECK COLLISIONI
+        return NULL;
+    n--;
+    
+    while(n>0){
+        address = HashFileName(tokens[i]) % 50;
+        last_file = &(last_file->dir_content[address]);
+        if(strcmp(last_file->name,tokens[i]) != 0)
+            return NULL;
+        n--;
+        i++;
+    }
+
+    for(int j = 0 ; j<500; j++)
+        free(tokens[j]);
+
+   return last_file;
+}
+
+
+
+
+/*
+Da rimuovere o reworkare
+*/
+filenode_t* FsIsInDir(const char* path){
+	
+	filenode_t* req_file = FileFromPath(path);
+	if(req_file == NULL)
+		return NULL;
+	else 
+		return req_file;
+
+	
+}
+
+
+/*
+    Funzione che carica in memoria tutti i file che compongono il file system
+*/
+
+void InitFS(){
 	char nomino[50];
-    for(int i = 0; i<50; i++){
+    uint8_t address;
+
+	for(int i = 0; i<50;i++)
+		files[i].check = 0;
+
+    //Inizializzazione contenuto di '/'
+    for(int i = 0; i<49; i++){
+
 		snprintf(nomino,50,"Petrus_%d",i);
-        strcpy(nodi_file[i].content,"Jhon K. Bridge");
-        strcpy(nodi_file[i].name,nomino);
+        address = HashFileName(nomino) % 50;
+        strcpy(files[address].name,nomino);
+        
+		files[address].check = 1;
+        files[address].content = "Contenuto File!";
+		files[address].mode = S_IFREG | 0755;
+        files[address].dir_content = NULL;
 
     }
+
+    //Inializzazione directory 'DIR'
+    address = HashFileName("DIR") % 50;
+	strcpy(files[address].name, "DIR");
+    
+	files[address].check = 1;
+	files[address].mode = S_IFDIR | 0444;
+	files[address].dir_content = files2;
+  
+
+    //Inizializzazione contenuto di '/DIR'
+    for(int i = 0; i<49; i++){
+
+		snprintf(nomino,50,"Francesco_%d",i);
+        address = HashFileName(nomino) % 50;
+        strcpy(files[HashFileName("DIR") % 50].dir_content[address].name,nomino);
+		files[HashFileName("DIR") % 50].dir_content[address].check = 1; 
+        files[HashFileName("DIR") % 50].dir_content[address].content = "Contenuto File 2!";
+		files[HashFileName("DIR") % 50].dir_content[address].mode = S_IFREG | 0755;
+
+    }
+
 	printf("Initializing File System\n");
 }
 
-uint8_t FsIsInDir(const char* path, uint8_t* address){
-	for(int i = 0 ; i<50;i++){
-		if(strcmp(nodi_file[i].name, path + 1) == 0){
-			*address = i;
-			return 1;
-		}
-	}
-	return -ENOENT;
-}
+
+
 
 
 
@@ -73,25 +200,35 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 			 struct fuse_file_info *fi)
 {
 	(void) fi;
-	int res = 0;
-	uint8_t address;
+
 	printf("Get attr of %s\n",path);
+
+	if(strcmp(path, "/") == 0){
+		stbuf->st_mode = S_IFDIR | 0444;
+		stbuf->st_nlink = 2;
+		return 0;
+	}
+	int res = 0;
+	filenode_t* req_file = FileFromPath(path);
+
+	
+
 	memset(stbuf, 0, sizeof(struct stat));
 
-	if(strcmp(path,"/") == 0){
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-		return res;
-	}
+	if(req_file != NULL){
 
-	if(FsIsInDir(path,&address) == 1){
-		stbuf->st_mode = S_IFREG | 0444;
+		stbuf->st_mode = req_file->mode;
 		stbuf->st_nlink = 1;
-		stbuf->st_size = strlen(nodi_file[address].content);
+
+		if(req_file->content != NULL)
+			stbuf->st_size = strlen(req_file->content);
+
+		else
+			stbuf->st_size = 0;
 	}
 	else
 		return -ENOENT;
-		
+
 	return res;
 }
 
@@ -102,16 +239,34 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	(void) offset;
 	(void) fi;
 	(void) flags;
+	filenode_t* req_dir = FileFromPath(path);
 	printf("Readdir %s\n",path);
-	if (strcmp(path, "/") != 0)
+
+	//Se è richiesta la cartella /
+	if(strcmp(path,"/") == 0){
+
+		filler(buf, ".", NULL, 0, 0);
+		filler(buf, "..", NULL, 0, 0);
+
+		for(int i = 0; i < 50; i++){
+			if(files[i].check != 0)
+				filler(buf,files[i].name,NULL,0,0);
+		}
+
+		return 0;
+	}
+
+	if (req_dir == NULL || req_dir->mode != (S_IFDIR | 0444))
 		return -ENOENT;
 
-
+	
+	
 	filler(buf, ".", NULL, 0, 0);
 	filler(buf, "..", NULL, 0, 0);
 
 	for(int i = 0; i < 50; i++){
-		filler(buf,nodi_file[i].name,NULL,0,0);
+		if(req_dir->dir_content[i].check != 0)
+			filler(buf,req_dir->dir_content[i].name,NULL,0,0);
 	}
 
 	return 0;
@@ -119,9 +274,9 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int hello_open(const char *path, struct fuse_file_info *fi)
 {
-	uint8_t address;
+	filenode_t* req_file = FileFromPath(path);
 	printf("Open file at %s\n",path);
-	if (!FsIsInDir(path,&address))
+	if (req_file == NULL)
 		return -ENOENT;
 
 	if ((fi->flags & O_ACCMODE) != O_RDONLY)
@@ -133,18 +288,21 @@ static int hello_open(const char *path, struct fuse_file_info *fi)
 static int hello_read(const char *path, char *buf, size_t size, off_t offset,
 		      struct fuse_file_info *fi)
 {
-	size_t len;
 	(void) fi;
-	uint8_t address;
-	printf("Reading file at %s\n",path);
-	if(!FsIsInDir(path,&address))
-		return -ENOENT;
 
-	len = strlen(nodi_file[address].content);
+	filenode_t* req_file = FileFromPath(path);
+	size_t len;
+	printf("Reading file at %s\n",path);
+	if(req_file == NULL)
+		return -ENOENT;
+	if(req_file->content == NULL)
+		return 0;
+
+	len = strlen(req_file->content);
 	if (offset < len) {
 		if (offset + size > len)
 			size = len - offset;
-		memcpy(buf, nodi_file[address].content + offset, size);
+		memcpy(buf, req_file->content + offset, size);
 	} else
 		size = 0;
 
@@ -161,7 +319,7 @@ static const struct fuse_operations hello_oper = {
 
 int main(int argc, char *argv[])
 {
-	InitFS(nodi_file);
+	InitFS();
 	int ret;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
