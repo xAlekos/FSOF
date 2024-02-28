@@ -10,13 +10,20 @@
 #include <stdlib.h>
 
 
+enum filestypes{
+	
+	REG,
+	DIR
+};
+
+
 /*
 File che compone il file system, tutti i file sono di questo tipo diffenziati dal campo mode.
 
 @name Il nome del file
 @content Il contenuto del file ( Ignorato nel caso in cui questo sia una cartella)
 @mode Il tipo di file e flag di permesso.
-@dir_content Ignorato se mode è diverso da S_IFDIR, riferimento a struttura contenente i file presenti nella cartella.
+@dir_content Ignorato se type è diverso da DIR, riferimento a struttura contenente i file presenti nella cartella.
 */
 typedef struct filenode {
     
@@ -25,6 +32,8 @@ typedef struct filenode {
 	uint8_t check;
 
     char* content;
+
+	uint8_t type;
 
 	__mode_t mode;
 
@@ -73,6 +82,9 @@ uint16_t HashFileName(char* name){
 
 }
 
+
+filenode_t root_dir; // /;
+
 filenode_t files[50]; //FILES CONTENUTI IN /
 
 filenode_t files2[50]; //FILES CONTENUTI IN /DIR
@@ -85,14 +97,18 @@ Tramite l'hash di ogni token per directory trova il file corrispondente.
 */
 filenode_t* FileFromPath(const char* path){
 	
-    char* tokens[500];
+	if(strcmp(path,"/") == 0)
+		return &root_dir;
 
+    char* tokens[500];
     for(int i = 0 ; i<500; i++)
         tokens[i] = malloc(500);
 
     uint16_t n = TokenizePath(path,tokens);
+
     uint8_t i = 0;
     filenode_t* root_dir = files;
+
     uint8_t address = HashFileName(tokens[i++]) % 50;
     filenode_t* last_file = &root_dir[address];
 
@@ -114,24 +130,7 @@ filenode_t* FileFromPath(const char* path){
 
    return last_file;
 }
-
-
-
-
-/*
-Da rimuovere o reworkare
-*/
-filenode_t* FsIsInDir(const char* path){
-	
-	filenode_t* req_file = FileFromPath(path);
-	if(req_file == NULL)
-		return NULL;
-	else 
-		return req_file;
-
-	
-}
-
+ 
 
 /*
     Funzione che carica in memoria tutti i file che compongono il file system
@@ -141,10 +140,20 @@ void InitFS(){
 	char nomino[50];
     uint8_t address;
 
+	/*Inizializzazione '/'*/
+	root_dir.check = 1;
+	root_dir.content = NULL;
+	root_dir.dir_content = files;
+	root_dir.mode = S_IFDIR | 0755;
+	root_dir.type = DIR;
+	strcpy(root_dir.name,"/");
+	/*--------------------------------*/
+	
+	/*Inizializzazione contenuto di '/' */
 	for(int i = 0; i<50;i++)
-		files[i].check = 0;
+		memset(&files[i],0,sizeof(filenode_t));
 
-    //Inizializzazione contenuto di '/'
+    
     for(int i = 0; i<49; i++){
 
 		snprintf(nomino,50,"Petrus_%d",i);
@@ -154,20 +163,23 @@ void InitFS(){
 		files[address].check = 1;
         files[address].content = "Contenuto File!";
 		files[address].mode = S_IFREG | 0755;
+		files[address].type = REG;
         files[address].dir_content = NULL;
 
     }
+	/*--------------------------------------*/
 
-    //Inializzazione directory 'DIR'
+    /*Inializzazione directory 'DIR' */
     address = HashFileName("DIR") % 50;
 	strcpy(files[address].name, "DIR");
     
 	files[address].check = 1;
 	files[address].mode = S_IFDIR | 0444;
 	files[address].dir_content = files2;
-  
+	files[address].type = DIR;
+	/*---------------------------------*/
 
-    //Inizializzazione contenuto di '/DIR'
+    /*Inizializzazione contenuto di '/DIR'*/
     for(int i = 0; i<49; i++){
 
 		snprintf(nomino,50,"Francesco_%d",i);
@@ -176,15 +188,11 @@ void InitFS(){
 		files[HashFileName("DIR") % 50].dir_content[address].check = 1; 
         files[HashFileName("DIR") % 50].dir_content[address].content = "Contenuto File 2!";
 		files[HashFileName("DIR") % 50].dir_content[address].mode = S_IFREG | 0755;
-
+		files[HashFileName("DIR") % 50].dir_content[address].type = DIR;
     }
-
+	/*--------------------------------------*/
 	printf("Initializing File System\n");
 }
-
-
-
-
 
 
 static void *hello_init(struct fuse_conn_info *conn,
@@ -200,6 +208,9 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 			 struct fuse_file_info *fi)
 {
 	(void) fi;
+	int res = 0;
+
+	memset(stbuf, 0, sizeof(struct stat));
 
 	printf("Get attr of %s\n",path);
 
@@ -208,14 +219,11 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 		stbuf->st_nlink = 2;
 		return 0;
 	}
-	int res = 0;
+	
 	filenode_t* req_file = FileFromPath(path);
 
-	
 
-	memset(stbuf, 0, sizeof(struct stat));
-
-	if(req_file != NULL){
+	if(req_file != NULL && req_file->check != 0){
 
 		stbuf->st_mode = req_file->mode;
 		stbuf->st_nlink = 1;
@@ -242,24 +250,8 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filenode_t* req_dir = FileFromPath(path);
 	printf("Readdir %s\n",path);
 
-	//Se è richiesta la cartella /
-	if(strcmp(path,"/") == 0){
-
-		filler(buf, ".", NULL, 0, 0);
-		filler(buf, "..", NULL, 0, 0);
-
-		for(int i = 0; i < 50; i++){
-			if(files[i].check != 0)
-				filler(buf,files[i].name,NULL,0,0);
-		}
-
-		return 0;
-	}
-
-	if (req_dir == NULL || req_dir->mode != (S_IFDIR | 0444))
+	if (req_dir == NULL || req_dir->type != DIR)
 		return -ENOENT;
-
-	
 	
 	filler(buf, ".", NULL, 0, 0);
 	filler(buf, "..", NULL, 0, 0);
