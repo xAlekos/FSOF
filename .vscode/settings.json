@@ -1,6 +1,11 @@
 {
     "files.associations": {
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "stdio.h": "c",
+        "fuse.h": "c",
+        "string.h": "c",
+        "assert.h": "c",
+        "stddef.h": "c"
     },
     "cmake.configureOnOpen": true
 }
