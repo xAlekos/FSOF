@@ -5,7 +5,8 @@
         "fuse.h": "c",
         "string.h": "c",
         "assert.h": "c",
-        "stddef.h": "c"
+        "stddef.h": "c",
+        "struct_iovec.h": "c"
     },
     "cmake.configureOnOpen": true,
     "C_Cpp.errorSquiggles": "disabled"

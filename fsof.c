@@ -42,7 +42,7 @@ static int myfs_getattr(const char *path, struct stat *stbuf,
 		stbuf->st_mode = req_file->mode;
 		stbuf->st_nlink = 1;
 
-		if(req_file->content != NULL)
+		if(strlen(req_file->content) != 0)
 			stbuf->st_size = strlen(req_file->content);
 
 		else
@@ -86,7 +86,7 @@ static int myfs_open(const char *path, struct fuse_file_info *fi)
 	if (req_file == NULL)
 		return -ENOENT;
 
-	if ((fi->flags & O_ACCMODE) != O_RDONLY)
+	if ((fi->flags & O_ACCMODE) != O_RDONLY && (fi->flags & O_ACCMODE) != O_WRONLY) 
 		return -EACCES;
 
 	return 0;
@@ -102,7 +102,7 @@ static int myfs_read(const char *path, char *buf, size_t size, off_t offset,
 	printf("Reading file %s\n",path);
 	if(req_file == NULL)
 		return -ENOENT;
-	if(req_file->content == NULL)
+	if(strlen(req_file->content) == 0)
 		return 0;
 
 	len = strlen(req_file->content);
@@ -116,12 +116,29 @@ static int myfs_read(const char *path, char *buf, size_t size, off_t offset,
 	return size;
 }
 
+static int myfs_write(const char *path, const char *buf, size_t size, off_t offset,
+		      struct fuse_file_info *fi)
+{
+	(void) fi;
+
+	filenode_t* req_file = FileFromPath(path);
+	printf("Writing to file %s\n",path);
+	if(req_file == NULL)
+		return -ENOENT;
+	if(offset + size < MAX_FILE_SIZE)
+		strncat(req_file->content + offset, buf,size);
+	else
+		size = 0;
+	return size;
+}
+
 static const struct fuse_operations myfs_oper = {
 	.init           = myfs_init,
 	.getattr	= myfs_getattr,
 	.readdir	= myfs_readdir,
 	.open		= myfs_open,
 	.read		= myfs_read,
+	.write 		= myfs_write
 };
 
 int main(int argc, char *argv[])
