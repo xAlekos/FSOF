@@ -12,9 +12,10 @@ static void *myfs_init(struct fuse_conn_info *conn,
 			struct fuse_config *cfg)
 {
 	(void) conn;
+	printf("Init Conn Kernel Module\n");
 	cfg->kernel_cache = 1;
 	return NULL;
-	printf("Init Connection to Kernel Module\n");
+	
 }
 
 static int myfs_getattr(const char *path, struct stat *stbuf,
@@ -25,7 +26,7 @@ static int myfs_getattr(const char *path, struct stat *stbuf,
 
 	memset(stbuf, 0, sizeof(struct stat));
 
-	printf("Get attr of %s\n",path);
+	printf("Get attr %s\n",path);
 
 	if(strcmp(path, "/") == 0){
 		stbuf->st_mode = S_IFDIR | 0444;
@@ -81,7 +82,7 @@ static int myfs_open(const char *path, struct fuse_file_info *fi)
 {
 
 	filenode_t* req_file = FileFromPath(path);
-	printf("Open file at %s\n",path);
+	printf("Open file %s\n",path);
 	if (req_file == NULL)
 		return -ENOENT;
 
@@ -98,7 +99,7 @@ static int myfs_read(const char *path, char *buf, size_t size, off_t offset,
 
 	filenode_t* req_file = FileFromPath(path);
 	size_t len;
-	printf("Reading file at %s\n",path);
+	printf("Reading file %s\n",path);
 	if(req_file == NULL)
 		return -ENOENT;
 	if(req_file->content == NULL)

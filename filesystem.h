@@ -4,8 +4,10 @@
 #include <fcntl.h>
 #include <stdlib.h>
 
-enum filestypes{
-	
+/*
+ Utilizzati nel campo type di variabili di tipo filenode_t
+*/
+enum filetypes{
 	REG,
 	DIR
 };
@@ -16,6 +18,8 @@ File che compone il file system, tutti i file sono di questo tipo diffenziati da
 
 @name Il nome del file
 @content Il contenuto del file ( Ignorato nel caso in cui questo sia una cartella)
+@check 1 se file è stato inizializzato altrimenti 0
+@type definisce tipo file, (vedi enum filetypes)
 @mode Il tipo di file e flag di permesso.
 @dir_content Ignorato se type è diverso da DIR, riferimento a struttura contenente i file presenti nella cartella.
 */
@@ -23,9 +27,9 @@ typedef struct filenode {
     
 	char name[50];
 
-	uint8_t check;
-
     char* content;
+
+    uint8_t check;
 
 	uint8_t type;
 
@@ -33,6 +37,50 @@ typedef struct filenode {
 
 	struct filenode* dir_content; 
 } filenode_t;
+
+
+/*
+Alloca in memoria lo spazio per contenere i file.
+@filesnum Numero di file da allocare.
+*/
+filenode_t* AllocateFiles(uint16_t filesnum){
+    if(filesnum == 0)
+        return NULL;
+
+    filenode_t* files = malloc(sizeof(filenode_t) * filesnum); 
+    if(files == NULL)
+        return NULL;
+    memset(files,0,sizeof(filenode_t)*filesnum);
+    return files;
+
+}
+
+/*
+Riempe i campi del file con i parametri non nulli passati alla funzione,
+imposta il check di validità ad 1 indicando il file come inizializzato.
+*/
+void EditFileAttributes(filenode_t* file, char* new_name, char* new_content,uint8_t new_type, __mode_t new_mode, filenode_t* new_dir_content){
+    
+    if(new_name != NULL)
+        strcpy(file->name,new_name);
+    
+    if(new_content != NULL)
+        file->content = new_content;
+
+    if(new_type != 0)
+        file->type = new_type;
+
+    if(new_mode != 0) 
+        file->mode = new_mode;
+
+    if(new_dir_content != NULL)
+        file->dir_content = new_dir_content;
+
+    if(file->check == 0)
+        file->check = 1;
+}
+
+
 
 /*
 Salva in buffer i token che compongono il path
@@ -76,14 +124,7 @@ uint16_t HashFileName(char* name){
 }
 
 
-filenode_t root_dir; // /;
-
-filenode_t files[50]; //FILES CONTENUTI IN /
-
-filenode_t files2[50]; //FILES CONTENUTI IN /DIR
-
-
-
+filenode_t* root_dir;
 
 /*
 Tramite l'hash di ogni token per directory trova il file corrispondente.
@@ -91,7 +132,7 @@ Tramite l'hash di ogni token per directory trova il file corrispondente.
 filenode_t* FileFromPath(const char* path){
 	
 	if(strcmp(path,"/") == 0)
-		return &root_dir;
+		return root_dir;
 
     char* tokens[500];
     for(int i = 0 ; i<500; i++)
@@ -100,7 +141,7 @@ filenode_t* FileFromPath(const char* path){
     uint16_t n = TokenizePath(path,tokens);
 
     uint8_t i = 0;
-    filenode_t* rt_dir_content = root_dir.dir_content;
+    filenode_t* rt_dir_content = root_dir->dir_content;
 
     uint8_t address = HashFileName(tokens[i++]) % 50;
     filenode_t* last_file = &rt_dir_content[address];
@@ -125,64 +166,45 @@ filenode_t* FileFromPath(const char* path){
 }
  
 
+
+void InitDir(filenode_t* dir, uint16_t filesnum,char* contenuto){
+    char name_buff[50];
+    uint16_t address;
+
+    for(int i = 0; i<filesnum; i++){
+        snprintf(name_buff,50,"File_%d",i);
+        address = HashFileName(name_buff) % 50;
+        EditFileAttributes(&dir[address], name_buff, contenuto ,REG, S_IFREG | 0755, NULL);
+    }
+
+}
+
+filenode_t* MakeDir(filenode_t* root_dir,char* name, uint16_t filesnum){
+    uint16_t address = HashFileName(name) % 50;
+    EditFileAttributes(&root_dir[address] , name, NULL , DIR, S_IFDIR | 0444, AllocateFiles(filesnum));
+    return &root_dir[address];
+}
+
+
 /*
     Funzione che carica in memoria tutti i file che compongono il file system
 */
 
 void InitFS(){
-	char nomino[50];
-    uint8_t address;
-
-	/*Inizializzazione '/'*/
-	root_dir.check = 1;
-	root_dir.content = NULL;
-	root_dir.dir_content = files;
-	root_dir.mode = S_IFDIR | 0755;
-	root_dir.type = DIR;
-	strcpy(root_dir.name,"/");
-	/*--------------------------------*/
+	/*Inizializzazione ROOT DIR*/
 	
-	/*Inizializzazione contenuto di '/' */
-	for(int i = 0; i<50;i++)
-		memset(&files[i],0,sizeof(filenode_t));
+    root_dir = AllocateFiles(1);
+    EditFileAttributes(root_dir , "/", NULL , DIR, S_IFDIR | 0444, AllocateFiles(50));
 
-    
-    for(int i = 0; i<49; i++){
-
-		snprintf(nomino,50,"FileInRootDir_%d",i);
-        address = HashFileName(nomino) % 50;
-        strcpy(files[address].name,nomino);
-        
-		files[address].check = 1;
-        files[address].content = "Contenuto File!";
-		files[address].mode = S_IFREG | 0755;
-		files[address].type = REG;
-        files[address].dir_content = NULL;
-
-    }
+    InitDir(root_dir->dir_content,49,"Contenuto file 1");
 	/*--------------------------------------*/
 
     /*Inializzazione directory 'DIR' */
-    address = HashFileName("DIR") % 50;
-	strcpy(files[address].name, "DIR");
-    
-	files[address].check = 1;
-	files[address].mode = S_IFDIR | 0444;
-	files[address].dir_content = files2;
-	files[address].type = DIR;
+    filenode_t* dir = MakeDir(root_dir->dir_content,"DIR",50);
 	/*---------------------------------*/
 
     /*Inizializzazione contenuto di '/DIR'*/
-    for(int i = 0; i<49; i++){
-
-		snprintf(nomino,50,"FileInDirDir_%d",i);
-        address = HashFileName(nomino) % 50;
-        strcpy(files[HashFileName("DIR") % 50].dir_content[address].name,nomino);
-		files[HashFileName("DIR") % 50].dir_content[address].check = 1; 
-        files[HashFileName("DIR") % 50].dir_content[address].content = "Contenuto File in DIR!";
-		files[HashFileName("DIR") % 50].dir_content[address].mode = S_IFREG | 0755;
-		files[HashFileName("DIR") % 50].dir_content[address].type = DIR;
-    }
+    InitDir(dir->dir_content,50,"Contenuto file 2");
 	/*--------------------------------------*/
 	printf("Initializing File System\n");
 }
