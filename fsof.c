@@ -71,8 +71,8 @@ static int myfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filler(buf, "..", NULL, 0, 0);
 
 	for(int i = 0; i < 50; i++){
-		if(req_dir->dir_content[i].check != 0)
-			filler(buf,req_dir->dir_content[i].name,NULL,0,0);
+		if(req_dir->dir_content[i] != NULL)
+			filler(buf,req_dir->dir_content[i]->name,NULL,0,0);
 	}
 
 	return 0;

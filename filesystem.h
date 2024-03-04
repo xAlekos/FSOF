@@ -39,31 +39,44 @@ typedef struct filenode {
 
 	__mode_t mode;
 
-	struct filenode* dir_content; 
+	struct filenode** dir_content;
+    uint8_t dir_entries;
+
 } filenode_t;
 
 
 /*
-Alloca in memoria lo spazio per contenere filesnum file.
-@filesnum Numero di file da allocare.
+Alloca in memoria lo spazio per contenere un file.
 */
-filenode_t* AllocateFiles(uint16_t filesnum){
-    if(filesnum == 0)
-        return NULL;
+filenode_t* AllocateFile(){
 
-    filenode_t* files = malloc(sizeof(filenode_t) * filesnum); 
+    filenode_t* files = malloc(sizeof(filenode_t)); 
     if(files == NULL)
         return NULL;
-    memset(files,0,sizeof(filenode_t)*filesnum);
+    memset(files,0,sizeof(filenode_t));
     return files;
 
+}
+
+/*
+Alloca in memoria la tabella dei contenuti di una directory.
+Questa contiene i riferimenti ad i file contenuti in una directory
+
+@file directory in cui allocare la tabella dei contenuti
+@num dimensioni della tabella
+*/
+filenode_t** AllocateDirEntries(filenode_t* dir,uint16_t num){
+    filenode_t** pointers_vector= malloc(sizeof(filenode_t*) * num);
+    if(pointers_vector == NULL)
+        return NULL;
+    return pointers_vector;
 }
 
 /*
 Riempe i campi del file con i parametri non nulli passati alla funzione,
 imposta il check di validità ad 1 indicando il file come inizializzato.
 */
-void EditFileAttributes(filenode_t* file, char* new_name, char* new_content,uint8_t new_type, __mode_t new_mode, filenode_t* new_dir_content){
+void EditFileAttributes(filenode_t* file, char* new_name, char* new_content,uint8_t new_type, __mode_t new_mode, filenode_t** new_dir_content){
     
     if(new_name != NULL)
         strcpy(file->name,new_name);
@@ -140,7 +153,7 @@ filenode_t* FileFromPath(const char* path){
 
     char* tokens[500];
     uint8_t i = 0;
-    filenode_t* rt_dir_content = root_dir->dir_content;
+    filenode_t** rt_dir_content = root_dir->dir_content;
 
     for(int i = 0 ; i<500; i++)
         tokens[i] = malloc(500);
@@ -148,16 +161,19 @@ filenode_t* FileFromPath(const char* path){
     uint16_t n_tokens = TokenizePath(path,tokens);
 
     uint8_t address = HashFileName(tokens[i++]) % FILES_VECTOR_MAX_DIM;
-    filenode_t* last_file = &rt_dir_content[address];
+    filenode_t* last_file = rt_dir_content[address];
     n_tokens--;
-
-    if(last_file->check == 0 || strcmp(last_file->name,tokens[0]) != 0) //TODO AGGIUNGERE CHECK COLLISIONI
+    if(last_file == NULL)
+        return NULL;
+    if(strcmp(last_file->name,tokens[0]) != 0) //TODO AGGIUNGERE CHECK COLLISIONI
         return NULL;
     
     while(n_tokens>0){
         address = HashFileName(tokens[i]) % FILES_VECTOR_MAX_DIM;
-        last_file = &(last_file->dir_content[address]);
-        if(last_file->check == 0 || strcmp(last_file->name,tokens[i]) != 0)
+        last_file = last_file->dir_content[address];
+        if(last_file == NULL)
+            return NULL;
+        if(strcmp(last_file->name,tokens[i]) != 0)
             return NULL;
         n_tokens--;
         i++;
@@ -171,33 +187,36 @@ filenode_t* FileFromPath(const char* path){
  
 
 /*
-Inizializza filesnum files la cui memoria è già stata allocata all'interno 
-di una directory
+Inizializza filesnum files allocando la memoria necessaria per memorizzarli
+e salva un riferimento ai file appena allocati nel campo dir_content di una directory.
 
-@dir campo dir_content della directory che si vuole inizializzare
+@dir directory che si vuole inizializzare
 @filesnum numero di file da inizializzare
 @contenuto contenuto con cui inizializzare i file
 */
 void InitDir(filenode_t* dir, uint16_t filesnum,char* contenuto){
     char name_buff[MAX_FILE_NAME];
     uint16_t address;
-
+    filenode_t* newfile;
     for(int i = 0; i<filesnum; i++){
+        newfile = malloc(sizeof(filenode_t));
         snprintf(name_buff,MAX_FILE_NAME,"File_%d",i);
         address = HashFileName(name_buff) % FILES_VECTOR_MAX_DIM;
-        EditFileAttributes(&dir[address], name_buff, contenuto ,REG, S_IFREG | 0755, NULL);
+        dir->dir_content[address] = newfile;
+        EditFileAttributes(dir->dir_content[address], name_buff, contenuto ,REG, S_IFREG | 0755, NULL);
+        dir->dir_entries++;
     }
 
 }
 
 /*
-Crea una cartella all'interno di una directory genitore.
-Lo spazio per la cartella deve essere già allocato con AllocateFiles
+Crea una
+
 */
 filenode_t* MakeDir(filenode_t* parent_dir,char* name, uint16_t filesnum){
     uint16_t address = HashFileName(name) % FILES_VECTOR_MAX_DIM;
-    EditFileAttributes(&parent_dir[address] , name, NULL , DIR, S_IFDIR | 0444, AllocateFiles(filesnum));
-    return &parent_dir[address];
+    EditFileAttributes(parent_dir->dir_content[address] , name, NULL , DIR, S_IFDIR | 0444, AllocateDirEntries(parent_dir->dir_content[address],FILES_VECTOR_MAX_DIM));
+    return parent_dir->dir_content[address];
 }
 
 
@@ -208,18 +227,18 @@ filenode_t* MakeDir(filenode_t* parent_dir,char* name, uint16_t filesnum){
 void InitFS(){
 	/*Inizializzazione ROOT DIR*/
 	
-    root_dir = AllocateFiles(1);
-    EditFileAttributes(root_dir , "/", NULL , DIR, S_IFDIR | 0444, AllocateFiles(50));
+    root_dir = AllocateFile();
+    EditFileAttributes(root_dir , "/", NULL , DIR, S_IFDIR | 0444, AllocateDirEntries(root_dir,FILES_VECTOR_MAX_DIM));
 
-    InitDir(root_dir->dir_content, FILES_VECTOR_MAX_DIM - 1,"Contenuto file 1");
+    InitDir(root_dir, FILES_VECTOR_MAX_DIM - 1,"Contenuto file 1");
 	/*--------------------------------------*/
 
     /*Inializzazione directory 'DIR' */
-    filenode_t* dir = MakeDir(root_dir->dir_content,"DIR",50);
+    filenode_t* dir = MakeDir(root_dir,"DIR",50);
 	/*---------------------------------*/
 
     /*Inizializzazione contenuto di '/DIR'*/
-    InitDir(dir->dir_content, FILES_VECTOR_MAX_DIM ,"Contenuto file 2");
+    InitDir(dir, FILES_VECTOR_MAX_DIM ,"Contenuto file 2");
 	/*--------------------------------------*/
-	printf("Initializing File System\n_tokens");
+	printf("Initializing File System");
 }
