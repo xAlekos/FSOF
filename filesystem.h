@@ -199,8 +199,8 @@ void InitDir(filenode_t* dir, uint16_t filesnum,char* contenuto){
     uint16_t address;
     filenode_t* newfile;
     for(int i = 0; i<filesnum; i++){
-        newfile = malloc(sizeof(filenode_t));
         snprintf(name_buff,MAX_FILE_NAME,"File_%d",i);
+        newfile = malloc(sizeof(filenode_t));
         address = HashFileName(name_buff) % FILES_VECTOR_MAX_DIM;
         dir->dir_content[address] = newfile;
         EditFileAttributes(dir->dir_content[address], name_buff, contenuto ,REG, S_IFREG | 0755, NULL);
@@ -215,6 +215,8 @@ Crea una
 */
 filenode_t* MakeDir(filenode_t* parent_dir,char* name, uint16_t filesnum){
     uint16_t address = HashFileName(name) % FILES_VECTOR_MAX_DIM;
+    filenode_t* newdir = malloc(sizeof(filenode_t));
+    parent_dir->dir_content[address] = newdir;
     EditFileAttributes(parent_dir->dir_content[address] , name, NULL , DIR, S_IFDIR | 0444, AllocateDirEntries(parent_dir->dir_content[address],FILES_VECTOR_MAX_DIM));
     return parent_dir->dir_content[address];
 }
