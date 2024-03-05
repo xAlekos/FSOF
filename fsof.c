@@ -37,7 +37,7 @@ static int myfs_getattr(const char *path, struct stat *stbuf,
 	filenode_t* req_file = FileFromPath(path);
 
 
-	if(req_file != NULL && req_file->check != 0){
+	if(req_file != NULL){
 
 		stbuf->st_mode = req_file->mode;
 		stbuf->st_nlink = 1;
@@ -53,6 +53,18 @@ static int myfs_getattr(const char *path, struct stat *stbuf,
 
 	return res;
 }
+
+void ReadCollisionList(dir_entry_t* collision_list_head, void* buf, fuse_fill_dir_t filler){
+    
+    while(collision_list_head != NULL){
+
+		filler(buf,collision_list_head->filenode->name,NULL,0,0);
+		collision_list_head = collision_list_head->next_colliding;
+    }
+        
+}
+
+
 
 static int myfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi,
@@ -70,9 +82,11 @@ static int myfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filler(buf, ".", NULL, 0, 0);
 	filler(buf, "..", NULL, 0, 0);
 
-	for(int i = 0; i < 50; i++){
+	for(int i = 0; i < DIR_ENTRIES_DIM; i++){
+
 		if(req_dir->dir_content[i] != NULL)
-			filler(buf,req_dir->dir_content[i]->name,NULL,0,0);
+			ReadCollisionList(req_dir->dir_content[i],buf,filler);
+
 	}
 
 	return 0;
