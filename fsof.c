@@ -84,7 +84,7 @@ static int myfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	for(int i = 0; i < DIR_ENTRIES_DIM; i++){
 
-		if(req_dir->dir_content[i] != NULL)
+		if(req_dir->dir_content[i] != NULL && req_dir->dir_content[i]->filenode != NULL)
 			ReadCollisionList(req_dir->dir_content[i],buf,filler);
 
 	}
@@ -146,13 +146,25 @@ static int myfs_write(const char *path, const char *buf, size_t size, off_t offs
 	return size;
 }
 
+static int myfs_mkdir (const char *path, mode_t mode){
+
+	filenode_t* parent_dir = GetParentDir(path);
+	char* name = FileNameFromPath(path);
+
+	MakeDir(parent_dir, name, mode | S_IFDIR);
+	free(name);
+	printf("create dir %s",path);
+	return 0;
+}
+
 static const struct fuse_operations myfs_oper = {
-	.init           = myfs_init,
+	.init       = myfs_init,
 	.getattr	= myfs_getattr,
 	.readdir	= myfs_readdir,
 	.open		= myfs_open,
 	.read		= myfs_read,
-	.write 		= myfs_write
+	.write 		= myfs_write,
+	.mkdir      = myfs_mkdir
 };
 
 int main(int argc, char *argv[])

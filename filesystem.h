@@ -105,6 +105,7 @@ della dir_entry all'interno dell'array.
 dir_entry_t** AllocateDirEntries(uint16_t num){
 
     dir_entry_t** pointers_vector= malloc(sizeof(dir_entry_t*) * num);
+    memset(pointers_vector,0,sizeof(dir_entry_t*)*num);
 
     if(pointers_vector == NULL)
         return NULL;
@@ -187,7 +188,6 @@ Ritorna un riferimento al file se trovato, NULL altrimenti
 filenode_t* SearchInCollisionList(const char* file_name, dir_entry_t* collision_list_head){
 
     while(collision_list_head != NULL){
-        printf(" %s",collision_list_head->filenode->name);
 
         if(strcmp(collision_list_head->filenode->name,file_name) == 0)
             return collision_list_head->filenode;
@@ -249,6 +249,82 @@ filenode_t* GetDirElement(char* file_name, filenode_t* dir){
 
 
 filenode_t* root_dir;
+
+/*
+Dato il path di un file ritorna il nome del file indicato dal path.
+*/
+char* FileNameFromPath(const char* path){
+    
+    char* file_name = malloc(50);
+
+    if(strcmp(path,"/") == 0)
+		return "/";
+
+    char* tokens[500];
+
+    for(int i = 0 ; i<500; i++)
+        tokens[i] = malloc(500);
+
+    uint16_t n_tokens = TokenizePath(path,tokens);
+
+    strcpy(file_name,tokens[n_tokens - 1]);
+
+    for(int j = 0 ; j<500; j++)
+        free(tokens[j]);
+
+   return file_name;
+}
+
+
+
+/*
+Dato un path ritorna la directory che contiene il file individuato dal path
+
+@path il path del file di cui si vuole ottenere riferimento alla directory in cui è contenuto
+*/
+filenode_t* GetParentDir(const char* path){
+
+    char* tokens[500];
+    uint8_t i = 0;
+
+    for(int i = 0 ; i<500; i++)
+        tokens[i] = malloc(500);
+
+    uint16_t n_tokens = TokenizePath(path,tokens);
+
+    if(n_tokens <= 1)
+        return root_dir;
+
+    filenode_t* last_file = GetDirElement(tokens[i++],root_dir);
+
+    if(last_file == NULL)
+        return NULL;
+
+    n_tokens--;
+    
+    while(n_tokens>1){
+        last_file = GetDirElement(tokens[i++],last_file);
+        
+        if(last_file == NULL)
+            return NULL;
+
+        n_tokens--;
+    }
+
+    for(int j = 0 ; j<500; j++)
+        free(tokens[j]);
+
+   return last_file;
+
+}
+
+
+
+
+
+
+
+
 
 /*
 Tramite l'hash di ogni token per directory trova il file corrispondente,
@@ -344,10 +420,10 @@ Alloca una directory con un vettore di dir entries di dimensione filesnum.
 @parent_dir La directory all'interno della quale verrà allocata la nuova directory.
 @name Il nome della nuova directory
 */
-filenode_t* MakeDir(filenode_t* parent_dir,char* name){
+filenode_t* MakeDir(filenode_t* parent_dir,char* name,mode_t mode){
 
-    filenode_t* newdir = AddNewFileToDir(parent_dir,"DIR");
-    EditFileAttributes(newdir , name, NULL , DIR, S_IFDIR | 0444, AllocateDirEntries(DIR_ENTRIES_DIM));
+    filenode_t* newdir = AddNewFileToDir(parent_dir,name);
+    EditFileAttributes(newdir , name, NULL , DIR, mode, AllocateDirEntries(DIR_ENTRIES_DIM));
     return newdir;
 }
 
@@ -366,7 +442,7 @@ void InitFS(){
 	/*--------------------------------------*/
 
     /*Inializzazione directory 'DIR' */
-    filenode_t* dir = MakeDir(root_dir,"DIR");
+    filenode_t* dir = MakeDir(root_dir,"DIR",S_IFDIR | 0444);
 	/*---------------------------------*/
 
     /*Inizializzazione contenuto di '/DIR'*/
