@@ -41,12 +41,7 @@ static int myfs_getattr(const char *path, struct stat *stbuf,
 
 		stbuf->st_mode = req_file->mode;
 		stbuf->st_nlink = 1;
-
-		if(strlen(req_file->content) != 0)
-			stbuf->st_size = strlen(req_file->content);
-
-		else
-			stbuf->st_size = 0;
+		stbuf->st_size = req_file->file_size;
 	}
 	else
 		return -ENOENT;
@@ -137,24 +132,82 @@ static int myfs_write(const char *path, const char *buf, size_t size, off_t offs
 
 	filenode_t* req_file = FileFromPath(path);
 	printf("Writing to file %s\n",path);
+
 	if(req_file == NULL)
 		return -ENOENT;
+
 	if(offset + size < MAX_FILE_SIZE)
-		strncat(req_file->content + offset, buf,size);
+		strncpy(req_file->content + offset, buf,size);
 	else
 		size = 0;
+	req_file->file_size = (req_file->file_size - (req_file->file_size - offset)) + (size - 1);
 	return size;
 }
 
-static int myfs_mkdir (const char *path, mode_t mode){
+static int myfs_truncate(const char* path, off_t off, struct fuse_file_info *fi){
+	
+	(void)fi;
+	filenode_t* req_file = FileFromPath(path);
+	printf("Truncating to %ld file %s\n",off, path);
+	req_file->file_size = off;
+	return 0;
 
+}
+
+static int myfs_mkdir (const char *path, mode_t mode){
+	//TODO sistemare rilevazione errori
 	filenode_t* parent_dir = GetParentDir(path);
 	char* name = FileNameFromPath(path);
 
 	MakeDir(parent_dir, name, mode | S_IFDIR);
 	free(name);
-	printf("create dir %s",path);
+	printf("create dir %s\n",path);
 	return 0;
+}
+
+static int myfs_create(const char* path, mode_t mode, struct fuse_file_info * fi){
+	//TODO sistemare rilevazione errori
+	(void)fi;
+	filenode_t* parent_dir = GetParentDir(path);
+	
+	char* name = FileNameFromPath(path);
+	filenode_t* newfile = AddNewFileToDir(parent_dir, name, NULL , S_IFREG | mode, REG , NULL);
+	if(newfile == NULL)
+		return -EEXIST;
+	free(name);
+	printf("create file %s\n",path);
+	return 0;
+
+}
+
+static int myfs_rename(const char* path, const char* new_name, unsigned int flags){
+	//TODO sistemare roba, gestire flag e altro :(
+	printf("Renaming file %s to %s\n", path , new_name);
+	(void)flags;
+	filenode_t* req_file;
+	filenode_t* parent_dir = GetParentDir(path);
+	char* oldname = FileNameFromPath(path);
+	filenode_t* file_with_same_name = GetDirElement(new_name,parent_dir);
+
+	if(file_with_same_name != NULL)
+		return -EEXIST;
+	
+	req_file = UnlinkFileFromDir(parent_dir, oldname);
+
+	if(req_file == NULL)
+		return -ENOENT; 
+
+	AddExistingFileToDir(parent_dir,req_file, new_name + 1);
+
+	free(oldname);
+	return 0;
+
+}
+
+static int myfs_unlink(const char* path){	
+	printf("Removing file %s\n", path);
+	return FreeFileFromPath(path);
+
 }
 
 static const struct fuse_operations myfs_oper = {
@@ -164,7 +217,11 @@ static const struct fuse_operations myfs_oper = {
 	.open		= myfs_open,
 	.read		= myfs_read,
 	.write 		= myfs_write,
-	.mkdir      = myfs_mkdir
+	.mkdir      = myfs_mkdir,
+	.create     = myfs_create,
+	.truncate   = myfs_truncate,
+	.rename     = myfs_rename,
+	.unlink     = myfs_unlink
 };
 
 int main(int argc, char *argv[])

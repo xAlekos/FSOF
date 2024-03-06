@@ -55,6 +55,8 @@ typedef struct filenode {
 
 	__mode_t mode;
 
+    size_t file_size;
+
 	dir_entry_t** dir_content;
 
     uint8_t dir_entries;
@@ -78,6 +80,7 @@ filenode_t* AllocateFile(){
     return files;
 
 }
+
 
 /*
 Alloca in memoria lo spazio per contenre un elemento
@@ -116,13 +119,15 @@ dir_entry_t** AllocateDirEntries(uint16_t num){
 /*
 Riempe i campi del file con i parametri non nulli passati alla funzione,
 */
-void EditFileAttributes(filenode_t* file, char* new_name, char* new_content,uint8_t new_type, __mode_t new_mode, dir_entry_t** new_dir_content){
+void EditFileAttributes(filenode_t* file, const char* new_name, char* new_content,uint8_t new_type, __mode_t new_mode, dir_entry_t** new_dir_content){
     
     if(new_name != NULL)
         strcpy(file->name,new_name);
     
-    if(new_content != NULL)
+    if(new_content != NULL){
         strcpy(file->content,new_content);
+        file->file_size = strlen(new_content);
+    }
 
     if(new_type != 0)
         file->type = new_type;
@@ -166,7 +171,7 @@ uint16_t TokenizePath(const char* path, char** tokens_buffer){
 Funzione hash DJB2
 Ritorna l'hash della stringa passatagli.
 */
-uint16_t HashFileName(char* name){
+uint16_t HashFileName(const char* name){
 
     uint16_t hash = 5381;
         int c;
@@ -217,6 +222,7 @@ dir_entry_t* AddCollidingElement(dir_entry_t* collision_list_head, filenode_t* n
     while(collision_list_head->next_colliding != NULL){
         collision_list_head = collision_list_head->next_colliding;
     }
+
     collision_list_head->next_colliding = new_dir_entry;
     return new_dir_entry;
 }
@@ -229,7 +235,7 @@ ritorna il file contenuto nella directory.
 @file_name il nome del file di cui si vuole il riferimento
 @dir riferimento alla directory contenente il file desiderato.
 */
-filenode_t* GetDirElement(char* file_name, filenode_t* dir){
+filenode_t* GetDirElement(const char* file_name, filenode_t* dir){
     
     filenode_t* req_file;
     uint16_t address = HashFileName(file_name) % DIR_ENTRIES_DIM;
@@ -318,14 +324,6 @@ filenode_t* GetParentDir(const char* path){
 
 }
 
-
-
-
-
-
-
-
-
 /*
 Tramite l'hash di ogni token per directory trova il file corrispondente,
 ritorna un riferimento al file individuato da path
@@ -365,20 +363,30 @@ filenode_t* FileFromPath(const char* path){
    return last_file;
 }
  
+
 /*
 Alloca un nuovo file e lo inserisce all'intero di una cartella.
 Alloca lo spazio per la dir_entry e per il file.
 
 @dir Directory in cui inserire il nuovo file
 @name Nome del nuovo file
+@content contenuto del nuovo file
+@mode Modo del nuovo file
+@type tipo del nuovo file
+@new_dir_content lista di riferimenti ad elementi contenuti nel file in caso questo sia una directory
 */
-filenode_t* AddNewFileToDir(filenode_t* dir, char* name){
+filenode_t* AddNewFileToDir(filenode_t* dir, char* name, char* content, mode_t mode, uint8_t type, dir_entry_t** new_dir_content){
     
+    //TODO AGGIUNGERE CHECK SE IL FILE E' GIA' ESISTENTE
+
     uint16_t address = HashFileName(name) % DIR_ENTRIES_DIM;
     filenode_t* newfile = malloc(sizeof(filenode_t));
-    strcpy(newfile->name,name);
+    newfile->file_size = 0;
+    EditFileAttributes(newfile , name, content , type, mode, AllocateDirEntries(DIR_ENTRIES_DIM));
+    
 
     if(dir->dir_content[address] == NULL){
+
         dir->dir_content[address] = AllocateDirEntry();
         dir->dir_content[address]->filenode = newfile;
     }
@@ -389,6 +397,127 @@ filenode_t* AddNewFileToDir(filenode_t* dir, char* name){
 
 }
 
+
+filenode_t* AddExistingFileToDir(filenode_t* dir, filenode_t* file_to_add ,const char* name){
+    
+    //TODO AGGIUNGERE CHECK SE IL FILE E' GIA' ESISTENTE
+
+    uint16_t address = HashFileName(name) % DIR_ENTRIES_DIM;
+
+    EditFileAttributes(file_to_add , name, NULL , 0, 0, NULL);
+    
+
+    if(dir->dir_content[address] == NULL){
+
+        dir->dir_content[address] = AllocateDirEntry();
+        dir->dir_content[address]->filenode = file_to_add;
+    }
+    else
+        AddCollidingElement(dir->dir_content[address],file_to_add);
+
+    return file_to_add; 
+
+}
+
+
+
+/*
+Data una directory ed il nome di un file, elimina il riferimento al file da quella directory.
+Gestisce il ricollegamento di eventuali nodi presenti nella lista di collisioni
+ritorna un riferimento al file scollegato dalla directory.
+*/
+filenode_t* UnlinkFileFromDir(filenode_t* parent_dir, char* filename){
+    
+    filenode_t* req_file;
+    uint16_t address = HashFileName(filename) % DIR_ENTRIES_DIM;
+    dir_entry_t* entry_containing_file = parent_dir->dir_content[address];
+    dir_entry_t* entry_next_element = entry_containing_file->next_colliding;
+    
+    /*Se quello da cancellare è il primo elemento nella lista di collisioni */
+    if(strcmp(entry_containing_file->filenode->name,filename) == 0){
+        
+        req_file = entry_containing_file->filenode;
+        free(entry_containing_file);
+        parent_dir->dir_content[address] = entry_next_element;
+        return req_file;
+
+    }
+    /*-----------------------------------------------------------------------*/
+
+    while(entry_next_element != NULL){
+        
+        if(strcmp(entry_next_element->filenode->name,filename) == 0){
+            
+            req_file = entry_next_element->filenode;
+            entry_containing_file->next_colliding = entry_next_element->next_colliding;
+            free(entry_next_element);
+            return req_file;
+
+        }
+
+        entry_containing_file = entry_next_element;
+        entry_next_element = entry_next_element->next_colliding;
+    }
+
+    return NULL;
+}
+
+
+
+
+/*
+Data una directory ed il nome di un file, elimina il file da quella directory.
+Gestisce il ricollegamento di eventuali nodi presenti nella lista di collisioni
+*/
+uint8_t DeleteFileFromDir(filenode_t* parent_dir, char* filename){
+    
+    uint16_t address = HashFileName(filename) % DIR_ENTRIES_DIM;
+    dir_entry_t* entry_containing_file = parent_dir->dir_content[address];
+    dir_entry_t* entry_next_element = entry_containing_file->next_colliding;
+    
+    /*Se quello da cancellare è il primo elemento nella lista di collisioni */
+    if(strcmp(entry_containing_file->filenode->name,filename) == 0){
+        
+        free(entry_containing_file->filenode);
+        free(entry_containing_file);
+        parent_dir->dir_content[address] = entry_next_element;
+        return 0;
+
+    }
+    /*-----------------------------------------------------------------------*/
+
+    while(entry_next_element != NULL){
+        
+        if(strcmp(entry_next_element->filenode->name,filename) == 0){
+            
+            entry_containing_file->next_colliding = entry_next_element->next_colliding;
+            free(entry_next_element->filenode);
+            free(entry_next_element);
+            return 0;
+
+        }
+
+        entry_containing_file = entry_next_element;
+        entry_next_element = entry_next_element->next_colliding;
+    }
+
+    return -ENOENT;
+}
+
+/*
+Elimina un file individuato da un path
+*/
+uint8_t FreeFileFromPath(const char* path){
+    
+    filenode_t* parent_dir = GetParentDir(path);
+    char* filename = FileNameFromPath(path);
+    uint8_t ret_value = DeleteFileFromDir(parent_dir,filename);
+    
+    free(filename);
+    
+    return ret_value;
+}
+        
 
 
 /*
@@ -401,13 +530,11 @@ Riempe una directory con filesnum file regolari.
 void FillDir(filenode_t* dir, uint16_t filesnum,char* contenuto){
     
     char name_buff[MAX_FILE_NAME];
-    filenode_t* newfile;
 
     for(uint16_t i = 0; i<filesnum; i++){
 
         snprintf(name_buff,MAX_FILE_NAME,"File_%d",i);
-        newfile = AddNewFileToDir(dir,name_buff);
-        EditFileAttributes(newfile, name_buff, contenuto ,REG, S_IFREG | 0755, NULL);
+        AddNewFileToDir(dir,name_buff,contenuto, S_IFREG | 0644, REG ,NULL);
         dir->dir_entries++;
 
     }
@@ -419,11 +546,11 @@ Alloca una directory con un vettore di dir entries di dimensione filesnum.
 
 @parent_dir La directory all'interno della quale verrà allocata la nuova directory.
 @name Il nome della nuova directory
+@mode Il modo della nuova directory
 */
 filenode_t* MakeDir(filenode_t* parent_dir,char* name,mode_t mode){
 
-    filenode_t* newdir = AddNewFileToDir(parent_dir,name);
-    EditFileAttributes(newdir , name, NULL , DIR, mode, AllocateDirEntries(DIR_ENTRIES_DIM));
+    filenode_t* newdir = AddNewFileToDir(parent_dir,name,NULL,mode,DIR, AllocateDirEntries(DIR_ENTRIES_DIM));
     return newdir;
 }
 
