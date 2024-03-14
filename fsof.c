@@ -111,10 +111,10 @@ static int myfs_read(const char *path, char *buf, size_t size, off_t offset,
 	printf("Reading file %s\n",path);
 	if(req_file == NULL)
 		return -ENOENT;
-	if(strlen(req_file->content) == 0)
+	if(req_file->file_size == 0)
 		return 0;
 
-	len = strlen(req_file->content);
+	len = req_file->file_size;
 	if (offset < len) {
 		if (offset + size > len)
 			size = len - offset;
@@ -137,10 +137,10 @@ static int myfs_write(const char *path, const char *buf, size_t size, off_t offs
 		return -ENOENT;
 
 	if(offset + size < MAX_FILE_SIZE)
-		strncpy(req_file->content + offset, buf,size);
+		memmove(req_file->content + offset, buf,size);
 	else
 		size = 0;
-	req_file->file_size = (req_file->file_size - (req_file->file_size - offset)) + (size - 1);
+	req_file->file_size = (req_file->file_size - (req_file->file_size - offset)) + (size);
 	return size;
 }
 
@@ -180,26 +180,36 @@ static int myfs_create(const char* path, mode_t mode, struct fuse_file_info * fi
 
 }
 
-static int myfs_rename(const char* path, const char* new_name, unsigned int flags){
+static int myfs_rename(const char* path, const char* new_path, unsigned int flags){
 	//TODO sistemare roba, gestire flag e altro :(
-	printf("Renaming file %s to %s\n", path , new_name);
-	(void)flags;
 	filenode_t* req_file;
-	filenode_t* parent_dir = GetParentDir(path);
-	char* oldname = FileNameFromPath(path);
-	filenode_t* file_with_same_name = GetDirElement(new_name,parent_dir);
+	filenode_t* old_parent_dir = GetParentDir(path);
+	filenode_t* parent_dir = GetParentDir(new_path);
+	char* old_file_name = FileNameFromPath(path);
+	char* new_file_name = FileNameFromPath(new_path);
 
-	if(file_with_same_name != NULL)
+	printf("Renaming file %s to %s with flags: %d\n", path , new_path,flags);
+
+	filenode_t* file_with_same_name = FileFromPath(new_path);
+
+	if(file_with_same_name != NULL && flags != 0){
 		return -EEXIST;
+	}
+
+	if(file_with_same_name != NULL && flags == 0){
+		FreeFileFromPath(new_path);
+		file_with_same_name = NULL;
+	}
 	
-	req_file = UnlinkFileFromDir(parent_dir, oldname);
+	req_file = UnlinkFileFromDir(old_parent_dir, old_file_name);
 
 	if(req_file == NULL)
 		return -ENOENT; 
 
-	AddExistingFileToDir(parent_dir,req_file, new_name + 1);
+	AddExistingFileToDir(parent_dir,req_file, new_file_name);
 
-	free(oldname);
+	free(old_file_name);
+	free(new_file_name);
 	return 0;
 
 }
@@ -210,7 +220,23 @@ static int myfs_unlink(const char* path){
 
 }
 
+static int myfs_chmod(const char* path, mode_t new_mode, struct fuse_file_info *fi){
+	
+	(void)fi;
+	filenode_t* req_file = FileFromPath(path);
+
+	if(req_file == NULL)
+		return -ENOENT;
+
+	printf("Changing mode of file %s to %d\n", path, new_mode);
+	
+	EditFileAttributes(req_file,NULL,NULL,0,new_mode,NULL);
+
+	return 0;
+}
+
 static const struct fuse_operations myfs_oper = {
+
 	.init       = myfs_init,
 	.getattr	= myfs_getattr,
 	.readdir	= myfs_readdir,
@@ -221,7 +247,8 @@ static const struct fuse_operations myfs_oper = {
 	.create     = myfs_create,
 	.truncate   = myfs_truncate,
 	.rename     = myfs_rename,
-	.unlink     = myfs_unlink
+	.unlink     = myfs_unlink,
+	.chmod   	= myfs_chmod
 };
 
 int main(int argc, char *argv[])

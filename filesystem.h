@@ -5,8 +5,8 @@
 #include <stdlib.h>
 
 #define DIR_ENTRIES_DIM 1000
-#define MAX_FILE_NAME 50
-#define MAX_FILE_SIZE 5000
+#define MAX_FILE_NAME 1000
+#define MAX_FILE_SIZE 2000000
 
 /*
  Utilizzati nel campo type di variabili di tipo filenode_t
