@@ -4,5 +4,5 @@
 
 
 
-## What does FSOF stands for?
+## What does FSOF stand for?
  File System OIn FMemory
