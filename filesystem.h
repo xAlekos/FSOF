@@ -4,7 +4,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 
-#define DIR_ENTRIES_DIM 1000
+#define DIR_ENTRIES_DIM 65536
 #define MAX_FILE_NAME 1000
 #define MAX_FILE_SIZE 2000000
 
@@ -22,7 +22,7 @@ enum filetypes{
 
 
 /*
-Elemento contenuto in una cartella, si tratta nodi di una lista di file il
+Elemento contenuto in una cartella, si tratta di un nodo di una lista di file il
 cui hash collide all'interno della stessa directory. 
 @filenode riferimento al file vero e proprio
 @next_colliding riferimento al prossimo file all'interno della lista di collisioni.
@@ -108,6 +108,7 @@ della dir_entry all'interno dell'array.
 dir_entry_t** AllocateDirEntries(uint16_t num){
 
     dir_entry_t** pointers_vector= malloc(sizeof(dir_entry_t*) * num);
+
     memset(pointers_vector,0,sizeof(dir_entry_t*)*num);
 
     if(pointers_vector == NULL)
@@ -145,7 +146,7 @@ void EditFileAttributes(filenode_t* file, const char* new_name, char* new_conten
 /*
 Salva in buffer i token che compongono il path
 Ritorna il numero di token
-@path percorso del file ottenuto dall'interfaccia FUSE
+@path percorso del file
 @buffer Buffer in cui salvare i token che compongono il path utilizzati per la localizzazione del file nel file system.
 */
 uint16_t TokenizePath(const char* path, char** tokens_buffer){
@@ -169,7 +170,6 @@ uint16_t TokenizePath(const char* path, char** tokens_buffer){
 
 /*
 Funzione hash DJB2
-Ritorna l'hash della stringa passatagli.
 */
 uint16_t HashFileName(const char* name){
 
@@ -184,7 +184,7 @@ uint16_t HashFileName(const char* name){
 }
 
 /*
-Dato il nome di un file effetta una ricerca lienare in una lista di collisioni
+Dato il nome di un file attraversa una lista di collisioni
 Ritorna un riferimento al file se trovato, NULL altrimenti
 
 @file_name Nome del file da cercare
@@ -204,8 +204,7 @@ filenode_t* SearchInCollisionList(const char* file_name, dir_entry_t* collision_
 
 
 /*
-Crea un nuovo nodo nella lista di collisioni e ci aggiunge un file indicato da newfile.
-
+Crea un nuovo nodo nella lista di collisioni e ci aggiunge in coda un file indicato da newfile.
 
 @collision_list_head head della lista di collisioni in cui crare il nuovo nodo
 @newfile Riferimento al file da aggiungere nel nodo della lista
