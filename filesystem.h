@@ -4,7 +4,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 
-#define DIR_ENTRIES_DIM 65536
+#define DIR_ENTRIES_DIM 65535
 #define MAX_FILE_NAME 1000
 #define MAX_FILE_SIZE 2000000
 
@@ -37,13 +37,14 @@ typedef struct dir_entry{
 
 
 /*
-File che compone il file system, tutti i file sono di questo tipo diffenziati dal campo mode.
+File che compone il file system, tutti i file sono di questo tipo diffenziati dal campo type.
 
 @name Il nome del file
-@content Il contenuto del file ( Ignorato nel caso in cui questo sia una cartella)
+@content Il contenuto del file ( Ignorato nel caso in cui questo sia una cartella) (Da sostituire con un array dinamico per non far occupare le dimensioni massime di un file in memoria)
 @type definisce tipo file, (vedi enum filetypes)
 @mode Il tipo di file e flag di permesso.
-@dir_content Ignorato se type è diverso da DIR, riferimento a struttura contenente i file presenti nella cartella.
+@dir_content Ignorato se type è diverso da DIR, vettore di riferimenti (indicizzata per hash del nome del file contentuto) a lista di collisioni di file contenuti nella stessa cartella con lo stesso hash.
+@dir_entries il numero di entries di una directory
 */
 typedef struct filenode {
     
@@ -59,7 +60,7 @@ typedef struct filenode {
 
 	dir_entry_t** dir_content;
 
-    uint8_t dir_entries;
+    uint8_t dir_entries; // Per il momento non utilizzato
 
 } filenode_t;
 
@@ -147,7 +148,7 @@ void EditFileAttributes(filenode_t* file, const char* new_name, char* new_conten
 Salva in buffer i token che compongono il path
 Ritorna il numero di token
 @path percorso del file
-@buffer Buffer in cui salvare i token che compongono il path utilizzati per la localizzazione del file nel file system.
+@tokens_buffer Buffer in cui salvare i token che compongono il path 
 */
 uint16_t TokenizePath(const char* path, char** tokens_buffer){
     
@@ -229,7 +230,7 @@ dir_entry_t* AddCollidingElement(dir_entry_t* collision_list_head, filenode_t* n
 
 /*
 Dato il nome di un file ed il riferimento ad una directory
-ritorna il file contenuto nella directory.
+ritorna il file contenuto nella directory, la ricerca tiene conto delle collisioni.
 
 @file_name il nome del file di cui si vuole il riferimento
 @dir riferimento alla directory contenente il file desiderato.
@@ -372,11 +373,11 @@ Alloca lo spazio per la dir_entry e per il file.
 @content contenuto del nuovo file
 @mode Modo del nuovo file
 @type tipo del nuovo file
-@new_dir_content lista di riferimenti ad elementi contenuti nel file in caso questo sia una directory
+@new_dir_content lista di riferimenti ad elementi contenuti nel file in caso questo sia una directory, NULL altrimenti
 */
 filenode_t* AddNewFileToDir(filenode_t* dir, char* name, char* content, mode_t mode, uint8_t type, dir_entry_t** new_dir_content){
     
-    //TODO AGGIUNGERE CHECK SE IL FILE E' GIA' ESISTENTE
+    //TODO AGGIUNGERE CHECK SE IL FILE E' GIA' ESISTENTE E SE DIR E' UNA DIR
 
     uint16_t address = HashFileName(name) % DIR_ENTRIES_DIM;
     filenode_t* newfile = malloc(sizeof(filenode_t));
@@ -397,9 +398,10 @@ filenode_t* AddNewFileToDir(filenode_t* dir, char* name, char* content, mode_t m
 }
 
 
+
 filenode_t* AddExistingFileToDir(filenode_t* dir, filenode_t* file_to_add ,const char* name){
     
-    //TODO AGGIUNGERE CHECK SE IL FILE E' GIA' ESISTENTE
+    //TODO AGGIUNGERE CHECK SE IL FILE E' GIA' ESISTENTE E SE DIR E' UNA DIR
 
     uint16_t address = HashFileName(name) % DIR_ENTRIES_DIM;
 
